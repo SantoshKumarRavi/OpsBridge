@@ -1,0 +1,419 @@
+name: Integration E2E
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  flutter-analytics-checks:
+    name: Flutter analytics analysis and tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/flutter-analytics
+    steps:
+      - uses: actions/checkout@v7
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.50.0'
+          cache: true
+          pub-cache: true
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+      - name: Check Dart formatting
+        run: dart format --set-exit-if-changed lib test
+      - name: Analyze Flutter app
+        run: flutter analyze --fatal-infos
+      - name: Run Flutter widget tests
+        run: flutter test
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+
+  telemetry-go-checks:
+    name: Go telemetry tests, vet, and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/telemetry-service
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Test telemetry handlers with race detection
+        run: go test -race ./...
+      - name: Vet telemetry package
+        run: go vet ./...
+      - name: Build telemetry service
+        run: go build ./...
+
+  spring-data-screening-tests:
+    name: Spring Data synthetic screening test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Test Spring Data screening lab
+        run: mvn -f services/spring-data-lab/pom.xml test
+
+  terraform-static-validation:
+    name: Terraform format and validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.8.5
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+      - name: Initialize providers without a backend
+        run: terraform init -backend=false
+      - name: Validate Terraform configuration
+        run: terraform validate
+      - name: Test network boundaries and workflow-service wiring
+        run: terraform test -no-color
+
+  gcp-gke-static-validation:
+    name: GCP GKE lab Terraform validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: infra/cloud-labs/gcp/gke-secrets
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.8.5
+      - name: Check Terraform formatting
+        run: terraform fmt -check -recursive
+      - name: Initialize Google provider without a backend
+        run: terraform init -backend=false
+      - name: Validate GKE and Secret Manager configuration
+        run: terraform validate
+      - name: Test disabled-by-default and Workload Identity policies
+        run: terraform test -no-color
+
+  frontend-bundle-analysis:
+    name: Next.js frontend bundle analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Generate worker portal and careers bundle reports
+        run: npm run analyze:frontends
+      - name: Upload analyzer reports
+        uses: actions/upload-artifact@v6
+        with:
+          name: next-frontend-bundle-analysis
+          path: |
+            apps/worker-portal/.next/diagnostics/analyze/
+            apps/careers-site/.next/diagnostics/analyze/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  api-client-sdk:
+    name: Typed API client package
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Regenerate API client types from OpenAPI
+        run: npm run generate:api-client-types
+      - name: Check generated types are committed and current
+        run: git diff --exit-code -- packages/api-client/src/openapi.generated.ts
+      - name: Test API client request, auth, upload, and error behavior
+        run: npm run test:api-client
+      - name: Build JavaScript and TypeScript declarations
+        run: npm run build:api-client
+      - name: Verify package contents without publishing
+        working-directory: packages/api-client
+        run: npm pack --dry-run
+      - name: Build consuming operations dashboard
+        run: npm run build --workspace apps/operations-dashboard
+
+  spring-cloud-discovery-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Package discovery lab services
+        run: mvn -f services/spring-cloud-discovery-lab/pom.xml package
+      - name: Start Config Server, Eureka, providers, and caller
+        run: docker compose -f services/spring-cloud-discovery-lab/compose.yml --profile discovery up -d --build
+      - name: Verify centralized config, registration, and load balancing
+        run: python scripts/verify_spring_cloud_discovery.py
+      - name: Stop discovery lab
+        if: always()
+        run: docker compose -f services/spring-cloud-discovery-lab/compose.yml --profile discovery down
+
+  architecture-labs-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Run durable Saga tests
+        run: python -m unittest discover -s services/saga-lab -v
+      - name: Run CQRS projection tests
+        run: python -m unittest discover -s services/cqrs-lab -v
+      - name: Run DSA practice examples
+        run: npm run test:dsa
+      - name: Install event-contract test dependency
+        run: python -m pip install jsonschema
+      - name: Run Kafka consumer contract and projection privacy tests
+        run: npm run test:event-consumer
+      - name: Run AI runtime policy decision tests
+        run: npm run test:ai-runtime
+      - name: Run correlation ID tests
+        run: npm run test:correlation
+      - name: Verify Keycloak realm and OTP enrollment configuration
+        run: npm run verify:keycloak-realm
+
+  gateway-compliance-contract-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/compliance-api/requirements-test.txt
+      - name: Install isolated API test dependencies
+        run: python -m pip install -r services/compliance-api/requirements-test.txt
+      - name: Install API gateway dependencies
+        run: npm ci --prefix services/api-gateway
+      - name: Install worker portal and Playwright dependencies
+        run: npm ci --workspace apps/worker-portal --include-workspace-root
+      - name: Install Chromium for the worker portal contract flow
+        run: npx playwright install --with-deps chromium
+      - name: Run compliance API tests with branch coverage
+        run: npm run test:compliance-api:coverage
+      - name: Upload compliance API coverage report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: compliance-api-coverage
+          path: services/compliance-api/htmlcov/
+          if-no-files-found: ignore
+      - name: Type-check browser tests
+        run: npm run test:e2e:typecheck
+      - name: Verify real gateway-to-Django contract over HTTP
+        run: npm run test:gateway-contract
+      - name: Verify browser-to-gateway-to-Django case creation
+        run: npm run test:worker-contract-e2e
+
+  integration-service-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.12"
+          build-root-directory: services/integration-service
+      - name: Test Spring integration service and provider adapters
+        working-directory: services/integration-service
+        run: gradle test
+
+  compliance-console-voice-policy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install workspace dependencies
+        run: npm ci
+      - name: Install Chromium for the compliance console workflow
+        run: npx playwright install --with-deps chromium
+      - name: Build the Angular compliance console
+        run: npm run build --workspace apps/compliance-console
+      - name: Verify consent policy entry and eligibility UI
+        run: npm run test:compliance-console
+
+  gateway-otel-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/api-gateway
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: services/api-gateway/package-lock.json
+      - name: Install locked gateway dependencies
+        run: npm ci
+      - name: Verify gateway exports request spans over OTLP
+        run: npm run test:otel
+
+  observability-stack-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Start monitoring and local alert inbox
+        run: docker compose -f infra/docker-compose.yml --profile observability up -d prometheus grafana alertmanager mailpit
+      - name: Verify Prometheus rules and Grafana dashboard provisioning
+        run: |
+          curl --fail --retry 60 --retry-delay 1 --retry-all-errors http://localhost:9090/-/ready
+          curl --fail --retry 60 --retry-delay 1 --retry-all-errors http://localhost:3001/api/health
+          curl --fail --retry 60 --retry-delay 1 --retry-all-errors http://localhost:9093/-/ready
+          curl --fail --retry 60 --retry-delay 1 --retry-all-errors http://localhost:8025/api/v1/info
+          docker compose -f infra/docker-compose.yml --profile observability exec -T prometheus promtool check config /etc/prometheus/prometheus.yml
+          docker compose -f infra/docker-compose.yml --profile observability exec -T prometheus promtool check rules /etc/prometheus/alerts.yml
+          docker compose -f infra/docker-compose.yml --profile observability exec -T alertmanager amtool check-config /etc/alertmanager/alertmanager.yml
+          docker compose -f infra/docker-compose.yml --profile observability exec -T -w /etc/prometheus prometheus promtool test rules alerts.test.yml
+          curl --fail --retry 60 --retry-delay 1 --retry-all-errors -u admin:admin 'http://localhost:3001/api/search?query=OpsBridge' | python -c "import json,sys; rows=json.load(sys.stdin); assert any(row.get('uid') == 'opsbridge-gateway-slo' for row in rows), rows"
+          python -c "import json; d=json.load(open('infra/observability/grafana/dashboards/gateway-slo.json')); titles={p['title'] for p in d['panels']}; required={'AI provider failure rate','AI provider p95 latency','Estimated AI cost per provider'}; assert required.issubset(titles), titles; print('AI provider reliability panels configured')"
+          python -c "import json,urllib.request; data=json.load(urllib.request.urlopen('http://localhost:9090/api/v1/rules')); names=[rule['name'] for group in data['data']['groups'] for rule in group['rules']]; required={'GatewayAvailabilitySLOBreached','GatewayLatencySLOBreached','GatewayScrapeFailed','AIProviderFailureRateHigh'}; assert required.issubset(names), names; print('Prometheus gateway SLO and AI provider reliability rules loaded')"
+      - name: Deliver a test alert through Alertmanager to local email
+        run: python scripts/verify_alert_delivery.py
+      - name: Stop observability stack
+        if: always()
+        run: docker compose -f infra/docker-compose.yml --profile observability down -v
+
+  rag-retrieval-evaluation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install evaluation client
+        run: python -m pip install httpx
+      - name: Start PostgreSQL and AI runtime
+        run: docker compose -f infra/docker-compose.yml up -d --build postgres ai-runtime
+      - name: Wait for AI runtime
+        run: curl --fail --retry 60 --retry-delay 2 --retry-all-errors http://localhost:8002/health
+      - name: Verify AI provider metrics endpoint
+        run: python -c "import urllib.request; body=urllib.request.urlopen('http://localhost:8002/metrics').read().decode(); assert 'opsbridge_ai_provider_attempts_total' in body and 'opsbridge_ai_provider_estimated_cost_usd_total' in body; print('AI provider metrics are exposed')"
+      - name: Verify durable agent memory across container restart
+        env:
+          AI_RUNTIME_URL: http://localhost:8002
+        run: python scripts/verify_ai_agent_memory.py
+      - name: Index synthetic policy set
+        env:
+          AI_RUNTIME_URL: http://localhost:8002
+        run: python scripts/index-sample-policy.py
+      - name: Evaluate retrieval quality and tenant isolation
+        env:
+          AI_RUNTIME_URL: http://localhost:8002
+          MIN_RECALL_AT_5: "0.85"
+          MIN_MRR: "0.70"
+          MAX_P95_SECONDS: "2.0"
+          RAG_EVAL_OUTPUT_PATH: artifacts/rag-retrieval-report.json
+        run: python scripts/evaluate_rag.py
+      - name: Upload RAG evaluation report
+        if: always() && hashFiles('artifacts/rag-retrieval-report.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: rag-retrieval-report
+          path: artifacts/rag-retrieval-report.json
+          retention-days: 14
+      - name: Stop AI evaluation services
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v
+
+  worker-onboarding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Install workspace dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Start PostgreSQL, RabbitMQ, Kafka, the worker, and event projection
+        run: docker compose -f infra/docker-compose.yml --profile event-consumer-lab up -d --build api-gateway celery-worker celery-beat event-consumer
+      - name: Wait for gateway and compliance API
+        run: |
+          curl --fail --retry 60 --retry-delay 2 --retry-all-errors http://localhost:8080/health
+          curl --fail --retry 60 --retry-delay 2 --retry-all-errors http://localhost:8001/health
+          curl --fail --retry 60 --retry-delay 2 --retry-all-errors http://localhost:8002/health
+      - name: Run browser workflow against real local services
+        run: npm run test:e2e
+      - name: Verify workflow events reach the tenant-scoped Kafka projection
+        env:
+          EVENT_PROJECTION_REPORT_PATH: artifacts/event-projection-e2e.json
+        run: python scripts/verify_event_projection_e2e.py
+      - name: Upload event projection verification report
+        if: always() && hashFiles('artifacts/event-projection-e2e.json') != ''
+        uses: actions/upload-artifact@v6
+        with:
+          name: event-projection-e2e-report
+          path: artifacts/event-projection-e2e.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Verify tenant-scoped AI tool through gateway and compliance API
+        run: python scripts/verify_agent_tool_runtime.py
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+      - name: Stop local backend dependencies
+        if: always()
+        run: docker compose -f infra/docker-compose.yml --profile event-consumer-lab down -v

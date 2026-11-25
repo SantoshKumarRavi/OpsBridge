@@ -1,0 +1,42 @@
+name: opsbridge-discovery-lab
+services:
+  config-server:
+    build: ./config-server
+    profiles: [discovery]
+    ports: ["8888:8888"]
+    restart: on-failure
+  registry:
+    build: ./registry
+    profiles: [discovery]
+    ports: ["8761:8761"]
+    restart: on-failure
+  provider-a:
+    build: ./provider
+    profiles: [discovery]
+    hostname: provider-a
+    environment:
+      SERVER_PORT: 8080
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_URL: http://registry:8761/eureka/
+    depends_on: [config-server, registry]
+    restart: on-failure
+  provider-b:
+    build: ./provider
+    profiles: [discovery]
+    hostname: provider-b
+    environment:
+      SERVER_PORT: 8080
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_URL: http://registry:8761/eureka/
+    depends_on: [config-server, registry]
+    restart: on-failure
+  caller:
+    build: ./caller
+    profiles: [discovery]
+    environment:
+      SERVER_PORT: 8090
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_URL: http://registry:8761/eureka/
+    ports: ["8090:8090"]
+    depends_on: [config-server, registry, provider-a, provider-b]
+    restart: on-failure

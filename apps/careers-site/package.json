@@ -1,0 +1,1 @@
+{"name":"@opsbridge/careers-site","version":"1.0.0","private":true,"scripts":{"dev":"next dev -p 3002","build":"next build","analyze":"next experimental-analyze --output","analyze:interactive":"next analyze"},"dependencies":{"next":"latest","react":"latest","react-dom":"latest"}}

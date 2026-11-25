@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+pydantic
+pymongo
+PyMySQL
+oracledb
+boto3
+redis
+elasticsearch
+neo4j
+confluent-kafka
+pika
+nats-py

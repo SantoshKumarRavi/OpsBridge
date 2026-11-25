@@ -1,0 +1,616 @@
+openapi: 3.1.0
+info:
+  title: OpsBridge Public API
+  version: 1.2.0
+  description: >-
+    Tenant-scoped onboarding API exposed through the Express gateway. Production
+    callers authenticate with a bearer token; the gateway derives tenant and
+    actor context from validated claims. X-Tenant-Id is only a local development
+    identity input and is not a production caller-controlled tenant header.
+servers:
+  - url: http://localhost:8080/api/v1
+security:
+  - bearerAuth: []
+paths:
+  /ai/agents/execute:
+    post:
+      operationId: executeAgentTurn
+      summary: Record an agent turn and optionally run an allow-listed read-only tool
+      description: Agent memory is scoped to the authenticated tenant and actor. The only current tool is get_case_summary; it validates a case UUID, forwards trusted tenant context to the compliance API, and returns a minimized response. The runtime does not execute external write actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [session_id, message]
+              properties:
+                session_id: { type: string, minLength: 1, maxLength: 80, pattern: '^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$' }
+                message: { type: string, minLength: 1, maxLength: 4000 }
+                plan: { type: array, maxItems: 20, items: { type: object } }
+                tool_name: { type: string, enum: [get_case_summary] }
+                tool_arguments:
+                  type: object
+                  additionalProperties: false
+                  properties:
+                    case_id: { type: string, format: uuid }
+                requires_external_action: { type: boolean, default: false }
+                approved: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Agent turn and optional read-only tool result.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, tenant_id, session_id, messages, tool_executed, executed]
+                properties:
+                  status: { type: string, enum: [accepted, awaiting_human_approval] }
+                  tenant_id: { type: string }
+                  session_id: { type: string }
+                  messages: { type: array, items: { type: object } }
+                  tool_name: { type: [string, 'null'] }
+                  tool_result: { type: [object, 'null'] }
+                  tool_executed: { type: boolean }
+                  executed: { type: boolean, const: false, description: No external write action was executed. }
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Case not found in the authenticated tenant.
+        '422':
+          description: Request or tool arguments failed validation.
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /cases:
+    get:
+      operationId: listCases
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [submitted, processing, review_required, ready, approved, rejected, changes_requested]
+        - in: query
+          name: limit
+          description: Maximum number of cases in this page.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - in: query
+          name: cursor
+          description: Opaque cursor returned by the previous page. Cursors are tenant- and status-scoped and expire after 24 hours.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: A stable keyset-paginated page of cases visible to the authenticated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaseList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    post:
+      operationId: createCase
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaseRequest'
+      responses:
+        '201':
+          description: Case created with its initial audit event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingCase'
+        '400':
+          description: Request validation errors.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrors'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /cases/{caseId}:
+    parameters:
+      - $ref: '#/components/parameters/CaseId'
+    get:
+      operationId: getCase
+      responses:
+        '200':
+          description: Case, documents, AI advisory, and audit timeline.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingCase'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /cases/{caseId}/documents:
+    parameters:
+      - $ref: '#/components/parameters/CaseId'
+    post:
+      operationId: uploadDocument
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadDocumentRequest'
+      responses:
+        '202':
+          description: Document accepted and queued for asynchronous processing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadDocumentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: File exceeds the 15 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /cases/{caseId}/decision:
+    parameters:
+      - $ref: '#/components/parameters/CaseId'
+    post:
+      operationId: decideCase
+      description: Requires the opsbridge-admin or compliance-reviewer role.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaseDecisionRequest'
+      responses:
+        '200':
+          description: Case updated with a human decision and audit event.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OnboardingCase'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller does not have a reviewer or administrator role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Case already has a final approve or reject decision.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /voice/contacts:
+    get:
+      operationId: getVoiceContactPolicy
+      description: Requires the opsbridge-admin or compliance-reviewer role. Returns the authenticated tenant's contact consent and suppression state.
+      parameters:
+        - in: query
+          name: phoneNumber
+          required: true
+          schema:
+            type: string
+            pattern: '^\+[1-9][0-9]{6,14}$'
+      responses:
+        '200':
+          description: Stored tenant contact policy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceContactPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller does not have an administrator or compliance reviewer role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: No voice policy exists for this contact in the authenticated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+    put:
+      operationId: upsertVoiceContactPolicy
+      description: Requires the opsbridge-admin or compliance-reviewer role. Consent and suppression state are written to the compliance API with actor and correlation audit data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceContactPolicyUpdate'
+      responses:
+        '200':
+          description: Tenant-scoped contact policy was stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceContactPolicy'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller does not have an administrator or compliance reviewer role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+  /voice/contacts/eligibility:
+    get:
+      operationId: checkVoiceContactEligibility
+      description: Requires the opsbridge-admin or compliance-reviewer role. The response exposes only the eligibility decision and reason, not stored consent metadata.
+      parameters:
+        - in: query
+          name: phoneNumber
+          required: true
+          schema:
+            type: string
+            pattern: '^\+[1-9][0-9]{6,14}$'
+      responses:
+        '200':
+          description: Eligibility decision for a contact in the authenticated tenant.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoiceEligibility'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Caller does not have an administrator or compliance reviewer role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '503':
+          $ref: '#/components/responses/UpstreamUnavailable'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    CaseId:
+      in: path
+      name: caseId
+      required: true
+      description: UUID of a case belonging to the authenticated tenant.
+      schema:
+        type: string
+        format: uuid
+  responses:
+    BadRequest:
+      description: Invalid request or upload.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Case not found for this tenant.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid, or expired access token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: API rate limit exceeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UpstreamUnavailable:
+      description: A required service is temporarily unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    VoiceContactPolicyUpdate:
+      type: object
+      additionalProperties: false
+      required: [phoneNumber, consentStatus, suppressed]
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+[1-9][0-9]{6,14}$'
+        consentStatus:
+          type: string
+          enum: [unknown, granted, revoked]
+        consentRecordedAt:
+          type: [string, 'null']
+          format: date-time
+        consentSource:
+          type: string
+          maxLength: 120
+        consentReference:
+          type: string
+          maxLength: 255
+        suppressed:
+          type: boolean
+        suppressionReason:
+          type: string
+          maxLength: 255
+    VoiceContactPolicy:
+      type: object
+      additionalProperties: false
+      required: [phoneNumber, consentStatus, consentRecordedAt, consentSource, consentReference, suppressed, suppressionReason]
+      properties:
+        phoneNumber:
+          type: string
+          pattern: '^\+[1-9][0-9]{6,14}$'
+        consentStatus:
+          type: string
+          enum: [unknown, granted, revoked]
+        consentRecordedAt:
+          type: [string, 'null']
+          format: date-time
+        consentSource:
+          type: string
+        consentReference:
+          type: string
+        suppressed:
+          type: boolean
+        suppressionReason:
+          type: string
+    VoiceEligibility:
+      type: object
+      additionalProperties: false
+      required: [eligible, reason]
+      properties:
+        eligible:
+          type: boolean
+        reason:
+          type: string
+          enum: [eligible, no_record, suppressed, consent_not_granted, invalid_consent_timestamp]
+    CreateCaseRequest:
+      type: object
+      additionalProperties: false
+      required: [workerName, email]
+      properties:
+        workerName:
+          type: string
+          minLength: 1
+          maxLength: 180
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        phone:
+          type: string
+          maxLength: 32
+          default: ''
+        role:
+          type: string
+          maxLength: 160
+          default: ''
+        country:
+          type: string
+          pattern: '^[A-Za-z]{2}$'
+          default: IN
+    CaseDecisionRequest:
+      type: object
+      additionalProperties: false
+      required: [decision, reason]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject, request_changes]
+        reason:
+          type: string
+          minLength: 1
+    UploadDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [file]
+      properties:
+        file:
+          type: string
+          format: binary
+          description: PDF, PNG, JPEG, or plain-text file no larger than 15 MB.
+        documentType:
+          type: string
+          maxLength: 80
+          default: identity
+    UploadDocumentResponse:
+      type: object
+      additionalProperties: false
+      required: [id, caseId, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        caseId:
+          type: string
+          format: uuid
+        status:
+          const: queued
+    CaseList:
+      type: object
+      additionalProperties: false
+      required: [items, total, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OnboardingCase'
+        total:
+          type: integer
+          minimum: 0
+          description: Count of all cases matching the tenant and optional status filter.
+        next_cursor:
+          type: [string, 'null']
+          description: Cursor for the next page, or null when there are no more results.
+    OnboardingCase:
+      type: object
+      additionalProperties: false
+      required: [id, tenant_id, worker_name, email, phone, role, country, status, extraction, ai_recommendation, assigned_to, decision_reason, version, created_at, updated_at, documents, audit_events]
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+        worker_name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+        role:
+          type: string
+        country:
+          type: string
+          pattern: '^[A-Z]{2}$'
+        status:
+          type: string
+          enum: [submitted, processing, review_required, ready, approved, rejected, changes_requested]
+        extraction:
+          type: object
+        ai_recommendation:
+          type: object
+        assigned_to:
+          type: string
+        decision_reason:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        documents:
+          type: array
+          items:
+            $ref: '#/components/schemas/CaseDocument'
+        audit_events:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEvent'
+    CaseDocument:
+      type: object
+      additionalProperties: false
+      required: [id, document_type, original_name, mime_type, size_bytes, status, confidence, extracted_fields, warnings, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        document_type:
+          type: string
+        original_name:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+        confidence:
+          type: number
+        extracted_fields:
+          type: object
+        warnings:
+          type: array
+          items: {}
+        created_at:
+          type: string
+          format: date-time
+    AuditEvent:
+      type: object
+      additionalProperties: false
+      required: [id, actor_id, event_type, details, correlation_id, created_at]
+      properties:
+        id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+        event_type:
+          type: string
+        details:
+          type: object
+        correlation_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+    ValidationErrors:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string

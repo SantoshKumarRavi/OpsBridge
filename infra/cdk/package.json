@@ -1,0 +1,1 @@
+{"name":"opsbridge-cdk-lab","version":"1.0.0","private":true,"scripts":{"synth":"cdk synth"},"dependencies":{"aws-cdk-lib":"latest","constructs":"latest"},"devDependencies":{"aws-cdk":"latest","ts-node":"latest","typescript":"latest"}}

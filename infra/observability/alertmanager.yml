@@ -1,0 +1,22 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: mailpit:1025
+  smtp_from: opsbridge-alerts@example.test
+  smtp_require_tls: false
+
+route:
+  receiver: local-email
+  group_by: [alertname, severity]
+  group_wait: 5s
+  group_interval: 1m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = critical
+      receiver: local-email
+
+receivers:
+  - name: local-email
+    email_configs:
+      - to: opsbridge-ops@example.test
+        send_resolved: true

@@ -1,0 +1,64 @@
+#%RAML 1.0
+title: OpsBridge Onboarding Process API
+version: v1
+baseUri: http://localhost:8081/api/v1
+mediaType: application/json
+protocols: [ HTTP ]
+
+types:
+  DocumentReview:
+    type: object
+    properties:
+      type: string
+      status: string
+      warnings: string[]
+  OnboardingSummary:
+    type: object
+    properties:
+      caseId: string
+      status: string
+      role: string
+      country: string
+      documentReview: DocumentReview[]
+  ApiError:
+    type: object
+    properties:
+      error: string
+
+/cases:
+  /{caseId}:
+    /summary:
+      get:
+        displayName: Get onboarding summary
+        description: Returns a minimal, tenant-scoped case and document-review summary from the Django system API.
+        securedBy: [ bearerAuth ]
+        headers:
+          X-Tenant-Id:
+            type: string
+            required: true
+        responses:
+          200:
+            body:
+              application/json:
+                type: OnboardingSummary
+          401:
+            body:
+              application/json:
+                type: ApiError
+          404:
+            body:
+              application/json:
+                type: ApiError
+          502:
+            body:
+              application/json:
+                type: ApiError
+
+securitySchemes:
+  bearerAuth:
+    type: Pass Through
+    describedBy:
+      headers:
+        Authorization:
+          type: string
+          required: true

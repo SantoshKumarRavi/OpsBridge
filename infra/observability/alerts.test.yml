@@ -1,0 +1,97 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: no-traffic-does-not-create-zero-valued-slo
+    interval: 1m
+    input_series:
+      - series: 'opsbridge_gateway_requests_total{method="GET",route="/api/v1/cases",status="200"}'
+        values: '0 0 0'
+      - series: 'opsbridge_gateway_request_duration_seconds_bucket{method="GET",route="/api/v1/cases",le="1"}'
+        values: '0 0 0'
+      - series: 'opsbridge_gateway_request_duration_seconds_count{method="GET",route="/api/v1/cases"}'
+        values: '0 0 0'
+    promql_expr_test:
+      - expr: opsbridge:gateway_availability_ratio:rate30d
+        eval_time: 2m
+        exp_samples: []
+      - expr: opsbridge:gateway_latency_under_1s_ratio:rate30d
+        eval_time: 2m
+        exp_samples: []
+      - expr: opsbridge:gateway_latency_over_1s_ratio:rate5m
+        eval_time: 2m
+        exp_samples: []
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: GatewayAvailabilitySLOBreached
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: GatewayLatencySLOBreached
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: AIProviderFailureRateHigh
+        exp_alerts: []
+
+  - name: healthy-traffic-with-no-5xx-meets-availability-target
+    interval: 1m
+    input_series:
+      - series: 'opsbridge_gateway_requests_total{method="GET",route="/api/v1/cases",status="200"}'
+        values: '0+100x3'
+      - series: 'opsbridge_gateway_request_duration_seconds_bucket{method="GET",route="/api/v1/cases",le="1"}'
+        values: '0+100x3'
+      - series: 'opsbridge_gateway_request_duration_seconds_count{method="GET",route="/api/v1/cases"}'
+        values: '0+100x3'
+    promql_expr_test:
+      - expr: opsbridge:gateway_availability_ratio:rate30d
+        eval_time: 3m
+        exp_samples:
+          - labels: 'opsbridge:gateway_availability_ratio:rate30d'
+            value: 1
+      - expr: opsbridge:gateway_server_error_ratio:rate5m
+        eval_time: 3m
+        exp_samples:
+          - labels: 'opsbridge:gateway_server_error_ratio:rate5m'
+            value: 0
+
+  - name: sustained-latency-breach-still-fires
+    interval: 1m
+    input_series:
+      - series: 'opsbridge_gateway_requests_total{method="GET",route="/api/v1/cases",status="200"}'
+        values: '0+100x15'
+      - series: 'opsbridge_gateway_request_duration_seconds_bucket{method="GET",route="/api/v1/cases",le="1"}'
+        values: '0+90x15'
+      - series: 'opsbridge_gateway_request_duration_seconds_count{method="GET",route="/api/v1/cases"}'
+        values: '0+100x15'
+    alert_rule_test:
+      - eval_time: 15m
+        alertname: GatewayLatencySLOBreached
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+            exp_annotations:
+              summary: Gateway 30-day latency is below the demo SLO.
+              description: Fewer than 95% of observed gateway requests completed within one second over 30 days. The ratio is undefined until requests exist.
+
+  - name: ai-provider-failure-alert-requires-sustained-volume-and-failure-rate
+    interval: 1m
+    input_series:
+      - series: 'opsbridge_ai_provider_attempts_total{provider="openai",outcome="failure"}'
+        values: '0+60x10'
+      - series: 'opsbridge_ai_provider_attempts_total{provider="openai",outcome="success"}'
+        values: '0+40x10'
+      - series: 'opsbridge_ai_provider_attempts_total{provider="gemini",outcome="failure"}'
+        values: '0+1x10'
+      - series: 'opsbridge_ai_provider_attempts_total{provider="gemini",outcome="success"}'
+        values: '0+59x10'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AIProviderFailureRateHigh
+        exp_alerts:
+          - exp_labels:
+              provider: openai
+              severity: warning
+            exp_annotations:
+              summary: AI provider failure rate is elevated for openai.
+              description: More than 20% of a provider's recent attempts are failing under sustained request volume. Inspect provider-attempt trace events and configured fallback behavior.

@@ -1,0 +1,9 @@
+# Kafka event consumer lab
+
+Consumes Django domain event topics (`opsbridge.domain.v1` and `.v2`) and the Hono provider-event topic (`opsbridge.external.v1`) into a small PostgreSQL projection. Each topic has a shared JSON Schema, including UUID/date formats, event-type rules, tenant ID bounds, and rejection of unknown envelope fields. V2 adds optional `aggregateVersion` and `actor` fields while preserving the V1 required fields and event types; the tests prove V1-shaped events validate under both contracts. The projection records the source schema version, and its startup migration adds that column to an existing lab table. Contract violations take the existing DLQ path with diagnostic metadata plus a hash/length; the raw payload is not copied. The database insert uses `event_id` as a primary key and commits before the consumer commits its Kafka offset. If the process stops between those operations, redelivery is harmless. Database or DLQ publish failures leave the source offset uncommitted.
+
+The projection persists only an allow-list of operational summary fields; provider payloads and personal data are discarded. Keep the projection tenant-scoped and internal. Kafka remains an at-least-once transport: the unique key makes this consumer's database side effect idempotent; it does not claim exactly-once delivery across systems.
+
+Run with the `event-consumer-lab` Compose profile. It is an educational projection, not a production integration orchestrator.
+
+Run the broker-free contract and projection privacy tests with `npm run test:event-consumer`. V2 is additive and optional fields preserve old producers and consumers; breaking changes require another versioned topic/schema. These unit tests do not replace Kafka/PostgreSQL broker-level tests or prove live v2 publication.

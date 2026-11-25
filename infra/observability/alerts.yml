@@ -1,0 +1,44 @@
+groups:
+  - name: opsbridge-gateway-slo
+    interval: 30s
+    rules:
+      - record: opsbridge:gateway_availability_ratio:rate30d
+        expr: (1 - ((sum(increase(opsbridge_gateway_requests_total{route=~"/api/v1/.*", status=~"5.."}[30d])) or vector(0)) / clamp_min(sum(increase(opsbridge_gateway_requests_total{route=~"/api/v1/.*"}[30d])), 1))) and (sum(increase(opsbridge_gateway_requests_total{route=~"/api/v1/.*"}[30d])) > 0)
+      - record: opsbridge:gateway_latency_under_1s_ratio:rate30d
+        expr: (sum(increase(opsbridge_gateway_request_duration_seconds_bucket{route=~"/api/v1/.*", le="1"}[30d])) / clamp_min(sum(increase(opsbridge_gateway_request_duration_seconds_count{route=~"/api/v1/.*"}[30d])), 1)) and (sum(increase(opsbridge_gateway_request_duration_seconds_count{route=~"/api/v1/.*"}[30d])) > 0)
+      - record: opsbridge:gateway_server_error_ratio:rate5m
+        expr: ((sum(rate(opsbridge_gateway_requests_total{route=~"/api/v1/.*", status=~"5.."}[5m])) or vector(0)) / clamp_min(sum(rate(opsbridge_gateway_requests_total{route=~"/api/v1/.*"}[5m])), 0.000001)) and (sum(rate(opsbridge_gateway_requests_total{route=~"/api/v1/.*"}[5m])) > 0)
+      - record: opsbridge:gateway_latency_over_1s_ratio:rate5m
+        expr: (1 - (sum(rate(opsbridge_gateway_request_duration_seconds_bucket{route=~"/api/v1/.*", le="1"}[5m])) / clamp_min(sum(rate(opsbridge_gateway_request_duration_seconds_count{route=~"/api/v1/.*"}[5m])), 0.000001))) and (sum(rate(opsbridge_gateway_request_duration_seconds_count{route=~"/api/v1/.*"}[5m])) > 0)
+      - alert: GatewayAvailabilitySLOBreached
+        expr: opsbridge:gateway_availability_ratio:rate30d < 0.995
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Gateway 30-day availability is below the demo SLO.
+          description: The 30-day server-error-free request ratio is below 99.5%. Check recent 5xx responses and traces.
+      - alert: GatewayLatencySLOBreached
+        expr: opsbridge:gateway_latency_under_1s_ratio:rate30d < 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Gateway 30-day latency is below the demo SLO.
+          description: Fewer than 95% of observed gateway requests completed within one second over 30 days. The ratio is undefined until requests exist.
+      - alert: GatewayScrapeFailed
+        expr: up{job="gateway"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Prometheus cannot scrape the API gateway.
+          description: The gateway metrics endpoint has been unavailable for at least two minutes.
+      - alert: AIProviderFailureRateHigh
+        expr: (sum by (provider) (rate(opsbridge_ai_provider_attempts_total{outcome="failure"}[5m])) / clamp_min(sum by (provider) (rate(opsbridge_ai_provider_attempts_total[5m])), 0.000001) > 0.2) and (sum by (provider) (rate(opsbridge_ai_provider_attempts_total[5m])) > 0.01)
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: AI provider failure rate is elevated for {{ $labels.provider }}.
+          description: More than 20% of a provider's recent attempts are failing under sustained request volume. Inspect provider-attempt trace events and configured fallback behavior.

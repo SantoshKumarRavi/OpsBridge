@@ -1,0 +1,24 @@
+plugins { id 'java'; id 'org.springframework.boot' version '3.4.5'; id 'io.spring.dependency-management' version '1.1.7' }
+group = 'com.opsbridge'; version = '1.0.0'
+def javaToolchainVersion = providers.gradleProperty('javaToolchainVersion').map { it.toInteger() }.getOrElse(21)
+java { toolchain { languageVersion = JavaLanguageVersion.of(javaToolchainVersion) } }
+repositories { mavenCentral() }
+dependencies {
+ implementation 'org.springframework.boot:spring-boot-starter-web'
+ implementation 'org.springframework.boot:spring-boot-starter-validation'
+ implementation 'org.springframework.boot:spring-boot-starter-actuator'
+ implementation 'com.stripe:stripe-java:28.0.1'
+ implementation 'com.twilio.sdk:twilio:10.6.5'
+ implementation 'com.sendgrid:sendgrid-java:4.10.3'
+ implementation 'software.amazon.awssdk:s3:2.30.38'
+ implementation 'software.amazon.awssdk:auth:2.30.38'
+ implementation 'com.google.api-client:google-api-client:2.7.2'
+ implementation 'com.google.oauth-client:google-oauth-client-jetty:1.37.0'
+ implementation 'com.docusign:docusign-esign-java:5.0.0'
+ implementation 'org.springframework.kafka:spring-kafka'
+ implementation 'io.micrometer:micrometer-registry-prometheus'
+ implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+ testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.withType(Test).configureEach { useJUnitPlatform() }

@@ -1,0 +1,15 @@
+aws_region = "ap-south-1"
+lab_name   = "opsbridge-lab"
+
+# All three features are off by default. Enable only the lab you are studying.
+enable_ec2_lab    = false
+enable_eks_lab    = false
+enable_route53_lab = false
+
+# Supply existing private network resources only for the lab you enable.
+aws_lab_vpc_id                  = "vpc-REPLACE_ME"
+aws_lab_ec2_subnet_id           = "subnet-REPLACE_ME"
+aws_lab_ec2_security_group_ids  = ["sg-REPLACE_ME"]
+aws_lab_subnet_ids              = ["subnet-REPLACE_ME_AZ1", "subnet-REPLACE_ME_AZ2"]
+route53_private_zone_name       = "lab.opsbridge.internal"
+eks_kubernetes_version          = "1.37"

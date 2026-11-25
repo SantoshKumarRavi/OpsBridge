@@ -1,0 +1,17 @@
+image: node:22.22.3
+
+stages:
+  - validate
+
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+frontend_build:
+  stage: validate
+  script:
+    - npm ci --cache .npm --prefer-offline
+    - npm run build:frontends

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opsbridge.local/schemas/external-event.v1.json",
+  "title": "ExternalIntegrationEvent",
+  "type": "object",
+  "required": ["eventId", "eventType", "occurredAt", "tenantId", "payload"],
+  "properties": {
+    "eventId": {"type": "string", "format": "uuid"},
+    "eventType": {"type": "string", "pattern": "^(integration\\.[a-zA-Z0-9_-]+\\.received|communication\\.delivery_status)$"},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "tenantId": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[a-zA-Z0-9_-]+$"},
+    "caseId": {"type": "string", "format": "uuid"},
+    "correlationId": {"type": "string"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opsbridge.local/schemas/onboarding-case.v1.json",
+  "title": "OnboardingCaseEvent",
+  "type": "object",
+  "required": ["eventId", "eventType", "occurredAt", "tenantId", "caseId", "payload"],
+  "properties": {
+    "eventId": {"type": "string", "format": "uuid"},
+    "eventType": {"enum": ["case.created", "document.received", "document.processed", "case.ai_recommendation_updated", "case.review_required", "case.approved", "case.rejected", "case.changes_requested"]},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "tenantId": {"type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[a-zA-Z0-9_-]+$"},
+    "caseId": {"type": "string", "format": "uuid"},
+    "correlationId": {"type": "string"},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

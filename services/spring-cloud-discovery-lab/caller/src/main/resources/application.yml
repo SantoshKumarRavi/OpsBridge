@@ -1,0 +1,23 @@
+server:
+  port: ${SERVER_PORT:8090}
+spring:
+  application:
+    name: discovery-caller
+  config:
+    import: "configserver:"
+  cloud:
+    config:
+      name: discovery-caller
+      uri: ${CONFIG_SERVER_URL:http://localhost:8888}
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+    registry-fetch-interval-seconds: 2
+  instance:
+    prefer-ip-address: true
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

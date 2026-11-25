@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:apikit="http://www.mulesoft.org/schema/mule/mule-apikit"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="
+        http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+        http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+        http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+        http://www.mulesoft.org/schema/mule/mule-apikit http://www.mulesoft.org/schema/mule/mule-apikit/current/mule-apikit.xsd">
+
+    <http:listener-config name="http-listener">
+        <http:listener-connection host="0.0.0.0" port="${http.port}" />
+    </http:listener-config>
+
+    <http:request-config name="compliance-system-api">
+        <http:request-connection protocol="${compliance.protocol}"
+                                 host="${compliance.host}"
+                                 port="${compliance.port}" />
+    </http:request-config>
+
+    <apikit:config name="opsbridge-api"
+                   api="api/opsbridge-process-api.raml"
+                   httpStatusVarName="httpStatus"
+                   outboundHeadersMapName="outboundHeaders">
+        <apikit:flow-mappings>
+            <apikit:flow-mapping resource="/cases/{caseId}/summary"
+                                 action="get"
+                                 flow-ref="get-case-summary" />
+        </apikit:flow-mappings>
+    </apikit:config>
+
+    <flow name="opsbridge-process-api-main">
+        <http:listener config-ref="http-listener" path="/api/*">
+            <http:response statusCode="#[vars.httpStatus default 200]">
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:response>
+            <http:error-response statusCode="#[vars.httpStatus default 500]">
+                <http:body>#[payload]</http:body>
+                <http:headers>#[vars.outboundHeaders default {}]</http:headers>
+            </http:error-response>
+        </http:listener>
+        <apikit:router config-ref="opsbridge-api" />
+    </flow>
+
+    <flow name="get-case-summary">
+        <http:request method="GET"
+                      config-ref="compliance-system-api"
+                      path="/api/v1/cases/{caseId}">
+            <http:uri-params><![CDATA[#[{caseId: attributes.uriParams.caseId}]]]></http:uri-params>
+            <http:headers><![CDATA[#[{
+                Authorization: attributes.headers.authorization,
+                "X-Tenant-Id": attributes.headers.'x-tenant-id',
+                "X-Internal-Service-Token": p('compliance.internalServiceToken'),
+                "X-Actor-Id": attributes.headers.'x-actor-id' default "mulesoft-process-api",
+                "X-Correlation-Id": attributes.headers.'x-correlation-id' default correlationId
+            }]]]></http:headers>
+        </http:request>
+        <ee:transform doc:name="Map system case to process summary">
+            <ee:message>
+                <ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+    caseId: payload.id,
+    status: payload.status,
+    role: payload.role default "",
+    country: payload.country,
+    documentReview: (payload.documents default []) map (document) -> {
+        type: document.document_type,
+        status: document.status,
+        warnings: document.warnings default []
+    }
+}]]></ee:set-payload>
+            </ee:message>
+        </ee:transform>
+    </flow>
+</mule>

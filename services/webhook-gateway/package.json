@@ -1,0 +1,1 @@
+{"name":"opsbridge-webhook-gateway","version":"1.0.0","private":true,"type":"module","scripts":{"start":"node src/server.js"},"dependencies":{"@hono/node-server":"latest","@opentelemetry/api":"latest","hono":"latest","kafkajs":"latest","nats":"latest","stripe":"latest","twilio":"latest"}}

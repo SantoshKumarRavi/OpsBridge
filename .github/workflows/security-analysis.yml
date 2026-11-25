@@ -1,0 +1,164 @@
+name: Security analysis
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL static analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript, python, java, go
+          build-mode: autobuild
+      - uses: github/codeql-action/analyze@v4
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
+
+  secret-scan:
+    name: Gitleaks repository history scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  filesystem-scan:
+    name: Trivy source, dependency, and IaC scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Scan repository files
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-filesystem-results.sarif
+          exit-code: "0"
+      - name: Upload Trivy filesystem findings
+        if: always() && hashFiles('trivy-filesystem-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-filesystem-results.sarif
+
+  container-image-scan:
+    name: Trivy container image scan (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: API gateway
+            context: services/api-gateway
+            dockerfile: services/api-gateway/Dockerfile
+            image: opsbridge-api-gateway:scan
+          - name: Compliance API
+            context: services/compliance-api
+            dockerfile: services/compliance-api/Dockerfile
+            image: opsbridge-compliance-api:scan
+          - name: AI runtime
+            context: services/ai-runtime
+            dockerfile: services/ai-runtime/Dockerfile
+            image: opsbridge-ai-runtime:scan
+          - name: Integration service
+            context: services/integration-service
+            dockerfile: services/integration-service/Dockerfile
+            image: opsbridge-integration-service:scan
+          - name: Realtime service
+            context: services/realtime-service
+            dockerfile: services/realtime-service/Dockerfile
+            image: opsbridge-realtime-service:scan
+          - name: Webhook gateway
+            context: services/webhook-gateway
+            dockerfile: services/webhook-gateway/Dockerfile
+            image: opsbridge-webhook-gateway:scan
+          - name: GraphQL BFF
+            context: services/graphql-bff
+            dockerfile: services/graphql-bff/Dockerfile
+            image: opsbridge-graphql-bff:scan
+          - name: Telemetry service
+            context: services/telemetry-service
+            dockerfile: services/telemetry-service/Dockerfile
+            image: opsbridge-telemetry-service:scan
+          - name: Kafka event consumer
+            context: .
+            dockerfile: services/event-consumer/Dockerfile
+            image: opsbridge-event-consumer:scan
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build image for scanning
+        run: docker build --file "${{ matrix.dockerfile }}" --tag "${{ matrix.image }}" "${{ matrix.context }}"
+      - name: Generate CycloneDX SBOM
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          format: cyclonedx
+          output: sbom.cdx.json
+          exit-code: "0"
+      - name: Attest SBOM build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@v4
+        with:
+          subject-path: sbom.cdx.json
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: sbom-${{ matrix.name }}
+          path: sbom.cdx.json
+          if-no-files-found: error
+          retention-days: 30
+      - name: Scan image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ matrix.image }}
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: sarif
+          output: trivy-image-results.sarif
+          exit-code: "0"
+      - name: Upload Trivy image findings
+        if: always() && hashFiles('trivy-image-results.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-image-results.sarif

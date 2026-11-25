@@ -1,0 +1,33 @@
+[
+  {
+    "id": "identity-low-confidence",
+    "tenantId": "demo-tenant",
+    "query": "What should happen when identity extraction confidence is low or the profile name differs from the identity document?",
+    "relevantTitles": ["Identity Document Review"]
+  },
+  {
+    "id": "work-eligibility-missing",
+    "tenantId": "demo-tenant",
+    "query": "What should a reviewer do with a missing, expired, unreadable or country and role mismatched work eligibility record?",
+    "relevantTitles": ["Work Eligibility Review"]
+  },
+  {
+    "id": "minimum-data-retention",
+    "tenantId": "demo-tenant",
+    "query": "What are the minimum data, tenant access, audit event and deletion requirements for synthetic onboarding documents?",
+    "relevantTitles": ["Privacy Retention Review"]
+  },
+  {
+    "id": "human-decision-boundary",
+    "tenantId": "demo-tenant",
+    "query": "Can AI approve or reject a worker after checking the onboarding evidence?",
+    "relevantTitles": ["Identity Document Review", "Work Eligibility Review", "Onboarding India Demo"]
+  },
+  {
+    "id": "tenant-isolation",
+    "tenantId": "rag-isolation-probe-tenant",
+    "query": "What does the identity review policy say about low-confidence extraction?",
+    "relevantTitles": [],
+    "expectEmpty": true
+  }
+]

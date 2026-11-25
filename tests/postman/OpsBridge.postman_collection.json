@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "OpsBridge API workflow",
+    "description": "Synthetic local workflow. Set baseUrl; for production-like identity supply accessToken. The local demo gateway accepts tenantId only outside production.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080/api/v1" },
+    { "key": "tenantId", "value": "demo-tenant" },
+    { "key": "accessToken", "value": "" },
+    { "key": "caseId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Create synthetic case",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "disabled": true }
+        ],
+        "body": { "mode": "raw", "raw": "{\n  \"workerName\": \"Postman Synthetic Worker\",\n  \"email\": \"postman-synthetic@example.invalid\",\n  \"phone\": \"+10000000000\",\n  \"role\": \"Portfolio Tester\",\n  \"country\": \"US\"\n}", "options": { "raw": { "language": "json" } } },
+        "url": "{{baseUrl}}/cases"
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('case is created', () => pm.response.to.have.status(201));",
+        "const body = pm.response.json();",
+        "pm.collectionVariables.set('caseId', body.id);"
+      ] } }]
+    },
+    {
+      "name": "Upload synthetic text document",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+          { "key": "Authorization", "value": "Bearer {{accessToken}}", "disabled": true }
+        ],
+        "body": { "mode": "formdata", "formdata": [
+          { "key": "documentType", "value": "identity", "type": "text" },
+          { "key": "file", "type": "file", "src": "./fixtures/synthetic-document.txt" }
+        ] },
+        "url": "{{baseUrl}}/cases/{{caseId}}/documents"
+      },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('document is accepted for async processing', () => pm.response.to.have.status(202));"
+      ] } }]
+    },
+    {
+      "name": "Read case and audit data",
+      "request": { "method": "GET", "header": [
+        { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+        { "key": "Authorization", "value": "Bearer {{accessToken}}", "disabled": true }
+      ], "url": "{{baseUrl}}/cases/{{caseId}}" },
+      "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+        "pm.test('case is tenant-readable', () => pm.response.to.have.status(200));",
+        "pm.test('audit events are returned', () => pm.expect(pm.response.json()).to.have.property('audit_events'));"
+      ] } }]
+    }
+  ]
+}

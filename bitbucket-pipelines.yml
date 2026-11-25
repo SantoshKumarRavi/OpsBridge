@@ -1,0 +1,11 @@
+image: node:22.22.3
+
+pipelines:
+  default:
+    - step:
+        name: Build portfolio frontends
+        caches:
+          - node
+        script:
+          - npm ci
+          - npm run build:frontends

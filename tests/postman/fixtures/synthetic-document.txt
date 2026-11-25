@@ -1,0 +1,4 @@
+Synthetic test fixture only.
+Name: Postman Example Worker
+Document number: DEMO-POSTMAN-0001
+Expiry date: 2030-01-01

@@ -1,0 +1,14 @@
+import { serve } from '@hono/node-server';
+import { Hono } from 'hono';
+import { Kafka } from 'kafkajs';
+import Stripe from 'stripe';
+import twilio from 'twilio';
+import { randomUUID } from 'node:crypto';
+
+const app=new Hono(), kafka=new Kafka({clientId:'opsbridge-webhooks',brokers:(process.env.KAFKA_BOOTSTRAP_SERVERS??'localhost:9092').split(',')}), producer=kafka.producer(), stripe=process.env.STRIPE_SECRET_KEY?new Stripe(process.env.STRIPE_SECRET_KEY):null;
+let connected=false;async function publish(topic,event){if(!connected){await producer.connect();connected=true;}await producer.send({topic,messages:[{key:event.tenantId??'external',value:JSON.stringify(event)}]});}
+app.get('/health',c=>c.json({status:'ok',service:'webhook-gateway'}));
+app.post('/webhooks/stripe',async c=>{const raw=await c.req.text(),signature=c.req.header('stripe-signature');if(!stripe||!process.env.STRIPE_WEBHOOK_SECRET)return c.json({error:'Stripe webhook is not configured.'},503);let event;try{event=stripe.webhooks.constructEvent(raw,signature,process.env.STRIPE_WEBHOOK_SECRET);}catch{return c.json({error:'Invalid webhook signature.'},400);}await publish('opsbridge.external.v1',{eventId:randomUUID(),eventType:'integration.stripe.received',occurredAt:new Date().toISOString(),tenantId:event.data.object.metadata?.tenantId??'unassigned',payload:{provider:'stripe',type:event.type,providerEventId:event.id,object:event.data.object}});return c.json({received:true});});
+app.post('/webhooks/twilio/status',async c=>{const url=new URL(c.req.url),form=await c.req.parseBody(),signature=c.req.header('x-twilio-signature')??'';if(!process.env.TWILIO_AUTH_TOKEN)return c.json({error:'Twilio webhook verification is not configured.'},503);const valid=twilio.validateRequest(process.env.TWILIO_AUTH_TOKEN,signature,url.toString(),Object.fromEntries(Object.entries(form).map(([k,v])=>[k,String(v)])));if(!valid)return c.json({error:'Invalid webhook signature.'},403);await publish('opsbridge.external.v1',{eventId:randomUUID(),eventType:'communication.delivery_status',occurredAt:new Date().toISOString(),tenantId:'unassigned',payload:{provider:'twilio',messageSid:form.MessageSid,status:form.MessageStatus}});return c.json({received:true});});
+app.post('/webhooks/generic/:connector',async c=>{const connector=c.req.param('connector'),secret=process.env[`WEBHOOK_${connector.toUpperCase()}_SECRET`];const supplied=c.req.header('x-opsbridge-webhook-secret');if(!secret||supplied!==secret)return c.json({error:'Webhook authentication failed.'},401);const body=await c.req.json();await publish('opsbridge.external.v1',{eventId:randomUUID(),eventType:`integration.${connector}.received`,occurredAt:new Date().toISOString(),tenantId:String(body.tenantId??''),payload:body});return c.json({received:true});});
+serve({fetch:app.fetch,port:Number(process.env.PORT??8787),hostname:'0.0.0.0'});

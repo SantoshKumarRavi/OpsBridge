@@ -1,0 +1,3 @@
+# Optional CPU-capable cross-encoder reranker dependency. Install alongside
+# requirements.txt only when RAG_RERANKER_ENABLED=true.
+sentence-transformers>=3.0,<6
