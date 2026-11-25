@@ -173,7 +173,8 @@ The VM is a single point of failure and low traffic could meet OCI's idle-reclam
 - Selected: one public GitHub monorepo, free static/Next portfolio hosting, and local Compose for the first complete workflow demonstration.
 - Conditional option: OCI Always Free single-node demo if a public API URL is needed and the resource, availability, security, and idle-reclamation limitations are acceptable.
 - Not selected for $0 ongoing deployment: the current AWS ECS/RDS design, a full Render deployment, or a multi-service GCP/Azure deployment with managed data/brokers.
-- Not yet done: initial GitHub commit/remote, cloud account/resource creation, production-hardening configuration, hosted workflow verification, or public deployment.
+- Completed 2026-11-25: public GitHub repository created/populated with the initial code, tests, configuration, and documentation on `main`; `origin` tracks the repository. Generated build/cache output, local run reports, Go binaries, Terraform caches/state, and `.env` files were excluded.
+- Not yet done: cloud account/resource creation, production-hardening configuration, hosted workflow verification, or public application deployment.
 
 ### 2026-11-21 — CI/CD and hosting clarification
 
@@ -190,3 +191,9 @@ The VM is a single point of failure and low traffic could meet OCI's idle-reclam
 - Place canonical PostgreSQL, RabbitMQ/Celery, Kafka/outbox/consumer, and Redis locally in Compose for full end-to-end testing. Amazon MSK is not free; Google Memorystore has no free tier; managed Redis/RabbitMQ are not selected. SQS/SNS are AWS adapter examples, not automatic Kafka/RabbitMQ replacements.
 - Recommended exposure: Vercel for frontend demos, local Compose for the complete backend/event flow, GCP/Azure telemetry only as short optional learning deployments, and a restricted OCI VM only as a conditional public full-stack experiment. No AWS/GCP/Azure resources were created or applied.
 - For current eligibility and price limits, see the cloud-by-cloud map and its official sources in [the deployment plan](deployment-plan.md#cloud-by-cloud-deployment-map).
+
+### 2026-11-25 — Initial repository publication
+
+- Published the initial project snapshot to [GitHub](https://github.com/SantoshKumarRavi/OpsBridge) on `main`, commit `d93110e`.
+- The public repository contains source, tests, infrastructure examples, and docs. `.env`, generated outputs, local test-run artifacts, and Terraform caches/state were excluded; Android Gradle wrapper files were included for reproducible builds.
+- GitHub Actions `Security analysis` and `Integration E2E` were queued by the push; their results have not yet been verified. No cloud deployment was made.

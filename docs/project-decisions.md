@@ -22,7 +22,7 @@ The service ownership and complete architecture are in [the final plan](final-pl
 
 - Keep one canonical **public GitHub monorepo** named `opsbridge`. Shared packages, contracts, local Compose, tests, CI, and deployment references are coupled across the existing tree.
 - Do not create a separate source repository per microservice, frontend, framework, or database. Hosting providers can create multiple deployment projects from subdirectories in the same monorepo.
-- The inspected workspace had no Git remote or commit yet and was on `master`; initial GitHub publication remains to be done. Use `main` as the default branch when publishing.
+- The repository was published to `https://github.com/SantoshKumarRavi/OpsBridge` on 2026-11-25 on the `main` branch. The initial commit is `d93110e`; `origin` tracks `main`. The branch is currently unprotected, and GitHub Actions checks were queued after the push.
 - The repo `.gitignore` excludes `.env` and build/dependency output. Never commit real provider credentials or personal data; review `.env.example` before publication.
 - GitHub Actions standard hosted runners are free for public repositories. Keep public CI limited to standard runners and do not place secrets in build output or logs.
 
@@ -48,9 +48,11 @@ Verified locally in the current worktree:
 Still unverified or constrained:
 
 - The full Docker-backed PostgreSQL/RabbitMQ/Kafka/worker stack has not been run in this environment; Docker Desktop/Engine was not installed when checked.
-- Hosted GitHub workflow results and cloud deployments have not been verified. The workspace has no Git remote or initial commit.
+- Hosted GitHub workflow results and cloud deployments have not been verified. The initial GitHub push is complete, but the `main` branch has no protection rules yet.
 - iOS build/signing and device OIDC, external provider credentials, and AWS/GCP runtime deployment remain unverified.
 - Some business-domain checklist topics are intentionally only synthetic examples or remain gaps; do not call them regulated or production capabilities.
+
+The initial public push included source, configuration, tests, and documentation. Generated build/cache directories, local performance run output, Go binaries, Terraform provider caches/state, and `.env` files were excluded. The commit uses a GitHub-associated noreply author email.
 
 ## Conversation record
 
