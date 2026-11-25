@@ -48,7 +48,7 @@ Verified locally in the current worktree:
 Still unverified or constrained:
 
 - The full Docker-backed PostgreSQL/RabbitMQ/Kafka/worker stack has not been run in this environment; Docker Desktop/Engine was not installed when checked.
-- Hosted GitHub workflow results and cloud deployments have not been verified. The initial GitHub push is complete, but the `main` branch has no protection rules yet.
+- Cloud deployments have not been verified. The first GitHub Actions runs have completed but are not green; failures are recorded below. The `main` branch has no protection rules yet.
 - iOS build/signing and device OIDC, external provider credentials, and AWS/GCP runtime deployment remain unverified.
 - Some business-domain checklist topics are intentionally only synthetic examples or remain gaps; do not call them regulated or production capabilities.
 
@@ -80,6 +80,12 @@ The initial public push included source, configuration, tests, and documentation
 - Run the end-to-end middleware stack in local Compose: PostgreSQL/pgvector is canonical state; RabbitMQ/Celery handles background work; Kafka carries outbox domain events/projections; Redis handles transient state and rate-limit support. SQS/SNS are AWS adapter examples, not drop-in replacements.
 - Vercel hosts frontend demos; Render can host only a limited optional backend experiment. For now the complete backend remains local. A restricted OCI VM is a future conditional public full-stack option, not deployed.
 - See the detailed [cloud and middleware placement map](deployment-plan.md#cloud-by-cloud-deployment-map), including free-tier boundaries and staged rollout. No cloud resources were provisioned in this discussion.
+
+### 2026-11-25 — First hosted CI results
+
+- [`Security analysis`](https://github.com/SantoshKumarRavi/OpsBridge/actions/runs/45648700131) failed: Gitleaks flagged a `curl -u` localhost Grafana check (`curl-auth-user`), and CodeQL initialization failed because the configured `autobuild` mode is unsupported for JavaScript/TypeScript. Trivy source/IaC and container image scan jobs succeeded. The Gitleaks finding still needs review; do not treat it as resolved just because it is a local test URL.
+- [`Integration E2E`](https://github.com/SantoshKumarRavi/OpsBridge/actions/runs/45648699979) completed with failures in `rag-retrieval-evaluation`, `spring-cloud-discovery-e2e`, `gateway-compliance-contract-e2e`, `architecture-labs-unit-tests`, `worker-onboarding`, and `compliance-console-voice-policy`. Other jobs in the workflow passed. The failures have not been diagnosed in this publishing task.
+- The repository push succeeded despite failed CI jobs. CI must be triaged before describing the hosted workflows as passing. No application tests were run manually for the push task.
 
 ### 2026-11-21 — Senior AI Agent Engineer application draft
 

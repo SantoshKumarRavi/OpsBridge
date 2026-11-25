@@ -196,4 +196,4 @@ The VM is a single point of failure and low traffic could meet OCI's idle-reclam
 
 - Published the initial project snapshot to [GitHub](https://github.com/SantoshKumarRavi/OpsBridge) on `main`, commit `d93110e`.
 - The public repository contains source, tests, infrastructure examples, and docs. `.env`, generated outputs, local test-run artifacts, and Terraform caches/state were excluded; Android Gradle wrapper files were included for reproducible builds.
-- GitHub Actions `Security analysis` and `Integration E2E` were queued by the push; their results have not yet been verified. No cloud deployment was made.
+- GitHub Actions `Security analysis` and `Integration E2E` ran and did not pass; see [the CI result notes](project-decisions.md#2026-11-25--first-hosted-ci-results). No cloud deployment was made.
